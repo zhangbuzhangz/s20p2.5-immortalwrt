@@ -1,0 +1,78 @@
+name: Build S20P ImmortalWrt
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y \
+          build-essential clang flex bison g++ gawk \
+          gcc-multilib g++-multilib gettext git \
+          libncurses5-dev libssl-dev python3-distutils \
+          rsync unzip zlib1g-dev file wget curl ccache
+
+      - name: Clone source
+        run: |
+          git clone --depth=1 https://github.com/immortalwrt/immortalwrt.git openwrt
+          cd openwrt
+          git checkout openwrt-24.10
+
+      - name: Update feeds
+        working-directory: openwrt
+        run: |
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Generate config
+        working-directory: openwrt
+        run: |
+          cat > .config <<EOF
+          CONFIG_TARGET_mediatek=y
+          CONFIG_TARGET_mediatek_filogic=y
+
+          CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_cetron_ct3003=y
+
+          CONFIG_PACKAGE_luci=y
+          CONFIG_PACKAGE_luci-ssl=y
+          CONFIG_PACKAGE_luci-app-opkg=y
+
+          CONFIG_PACKAGE_htop=y
+          CONFIG_PACKAGE_nano=y
+          CONFIG_PACKAGE_curl=y
+          CONFIG_PACKAGE_kmod-usb3=y
+          CONFIG_PACKAGE_block-mount=y
+          CONFIG_PACKAGE_kmod-fs-ext4=y
+          CONFIG_PACKAGE_kmod-fs-f2fs=y
+          EOF
+
+          make defconfig
+
+      - name: Search S20P DTS
+        working-directory: openwrt
+        run: |
+          grep -Rni "s20p\|clx\|supergateway" target/linux/mediatek || true
+
+      - name: Download packages
+        working-directory: openwrt
+        run: |
+          make download -j8
+
+      - name: Build firmware
+        working-directory: openwrt
+        run: |
+          make -j$(nproc) || make -j1 V=s
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: S20P-Firmware
+          path: openwrt/bin/targets/
